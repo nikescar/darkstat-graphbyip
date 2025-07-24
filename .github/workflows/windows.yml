@@ -1,0 +1,84 @@
+name: Windows CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'AUTHORS'
+      - 'ChangeLog'
+      - 'COPYING.GPL'
+      - 'LICENSE'
+      - 'NEWS'
+  pull_request:
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - 'AUTHORS'
+      - 'ChangeLog'
+      - 'COPYING.GPL'
+      - 'LICENSE'
+      - 'NEWS'
+
+env:
+  LANG: en_US.UTF-8
+  TZ: UTC
+
+jobs:
+  windows-cygwin:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type:
+          - name: default
+            configure_flags: ""
+          - name: debug
+            configure_flags: "--enable-debug"
+
+    name: Windows Cygwin (${{ matrix.build_type.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Cygwin
+        uses: egor-tensin/setup-cygwin@v4
+        with:
+          platform: x64
+          packages: >-
+            autoconf
+            automake
+            gcc-core
+            gcc-g++
+            libpcap-devel
+            make
+            pkg-config
+
+      - name: Build with Cygwin (${{ matrix.build_type.name }})
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          cd "${GITHUB_WORKSPACE}"
+          export CFLAGS="-Wall -Wextra"
+          export CXXFLAGS="-Wall -Wextra"
+          echo "::group::autoreconf"
+          autoreconf -vif
+          echo "::endgroup::"
+          echo "::group::configure"
+          ./configure ${{ matrix.build_type.configure_flags }} || { cat config.log; exit 1; }
+          echo "::endgroup::"
+          echo "::group::build"
+          make -j$(nproc)
+          echo "::endgroup::"
+          echo "::group::test"
+          ./darkstat.exe --help
+          echo "::endgroup::"
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cygwin-${{ matrix.build_type.name }}
+          path: |
+            darkstat.exe
+            darkstat.8
